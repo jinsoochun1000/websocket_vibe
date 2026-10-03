@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>WebSocket Test</title>
+</head>
+<body>
+
+  <!-- 전송 버튼 -->
+  <button id="send" onclick="sendMessage()">Hi 보내기</button>
+
+  <div id="log" style="margin-top: 15px; border: 1px solid #ccc; padding: 10px; height: 150px; overflow-y: auto;"></div>
+
+  <script>
+    // 1. 웹소켓 인스턴스 생성 및 연결
+    let socket = new WebSocket("ws://localhost:8081");
+    const logBox = document.getElementById("log");
+
+    function printLog(msg) {
+      const p = document.createElement("p");
+      p.style.margin = "4px 0";
+      p.textContent = msg;
+      logBox.appendChild(p);
+    }
+
+    // 2. 소켓 이벤트 리스너 등록
+    socket.onopen = (event) => {
+      printLog("[연결 완료] 서버에 연결되었습니다.");
+    };
+
+    socket.onmessage = (event) => {
+      printLog(`[수신] 서버로부터 메시지: ${event.data}`);
+    };
+
+    socket.onerror = (error) => {
+      printLog(`[에러] 소켓 에러 발생: ${error.message || "오류"}`);
+    };
+
+    socket.onclose = (event) => {
+      printLog(`[종료] 연결 해제 (코드: ${event.code})`);
+    };
+
+    // 3. 버튼 클릭 시 메시지 전송 함수 (연결 상태 검증 포함)
+    function sendMessage() {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send('Hi');
+        printLog("[전송] 서버로 'Hi' 메시지를 전송했습니다.");
+      } else {
+        alert("소켓이 아직 연결되지 않았습니다.");
+      }
+    }
+  </script>
+
+</body>
+</html>

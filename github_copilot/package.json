@@ -1,0 +1,12 @@
+{
+  "name": "websocket-tutorial",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js와 브라우저 WebSocket API로 만드는 실시간 채팅 튜토리얼",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

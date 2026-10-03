@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebSocket Echo</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: system-ui, sans-serif;
+    }
+    body {
+      max-width: 36rem;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    h1 { font-size: 1.4rem; }
+    #status { margin: 0 0 1rem; }
+    #log {
+      min-height: 12rem;
+      margin: 0 0 1rem;
+      padding: 0.75rem;
+      border: 1px solid #8884;
+      border-radius: 6px;
+      list-style: none;
+    }
+    #log li { margin: 0.35rem 0; }
+    .sent { color: #2563eb; }
+    .echo { color: #15803d; }
+    form { display: flex; gap: 0.5rem; }
+    input { flex: 1; padding: 0.45rem 0.6rem; }
+    button { padding: 0.45rem 0.8rem; }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Echo</h1>
+  <p id="status">연결 중</p>
+  <ul id="log"></ul>
+  <form id="form">
+    <input id="input" type="text" autocomplete="off" placeholder="메시지를 입력하세요" disabled>
+    <button type="submit" disabled>보내기</button>
+  </form>
+
+  <script>
+    // 페이지와 같은 호스트의 WebSocket. 서버가 index.html과 소켓을 같은 포트에서 연다.
+    const ws = new WebSocket(`ws://${location.host}`);
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const form = document.getElementById("form");
+    const input = document.getElementById("input");
+    const button = form.querySelector("button");
+
+    function addLine(kind, text) {
+      const li = document.createElement("li");
+      li.className = kind;
+      li.textContent = (kind === "sent" ? "보냄: " : "에코: ") + text;
+      logEl.appendChild(li);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setReady(ready) {
+      input.disabled = !ready;
+      button.disabled = !ready;
+      if (ready) input.focus();
+    }
+
+    ws.onopen = () => {
+      statusEl.textContent = "연결됨";
+      setReady(true);
+    };
+
+    ws.onclose = () => {
+      statusEl.textContent = "끊김";
+      setReady(false);
+    };
+
+    ws.onerror = () => {
+      statusEl.textContent = "끊김";
+    };
+
+    // 서버가 같은 텍스트를 돌려주면 에코로 표시한다.
+    ws.onmessage = (event) => {
+      addLine("echo", String(event.data));
+    };
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(text);
+      addLine("sent", text);
+      input.value = "";
+    });
+  </script>
+</body>
+</html>

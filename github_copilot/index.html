@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebSocket 채팅 튜토리얼</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f3f5f9;
+        color: #172033;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      main {
+        width: min(100%, 680px);
+        overflow: hidden;
+        border: 1px solid #e1e6ef;
+        border-radius: 18px;
+        background: #fff;
+        box-shadow: 0 18px 50px rgb(24 39 75 / 10%);
+      }
+
+      header {
+        padding: 24px;
+        border-bottom: 1px solid #edf0f5;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.35rem;
+      }
+
+      header p {
+        margin: 0;
+        color: #68738a;
+        font-size: 0.92rem;
+      }
+
+      #status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        color: #68738a;
+        font-size: 0.85rem;
+      }
+
+      #status::before {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #98a2b3;
+        content: "";
+      }
+
+      #status[data-state="connected"] {
+        color: #16804a;
+      }
+
+      #status[data-state="connected"]::before {
+        background: #20a464;
+      }
+
+      #status[data-state="connecting"] {
+        color: #a56a00;
+      }
+
+      #status[data-state="connecting"]::before {
+        background: #e8a329;
+      }
+
+      #messages {
+        height: min(52vh, 420px);
+        min-height: 250px;
+        overflow-y: auto;
+        padding: 20px 24px;
+        list-style: none;
+      }
+
+      #messages li {
+        margin-bottom: 12px;
+        overflow-wrap: anywhere;
+        line-height: 1.5;
+      }
+
+      #messages .system {
+        color: #68738a;
+        font-size: 0.88rem;
+      }
+
+      #messages time {
+        margin-right: 8px;
+        color: #98a2b3;
+        font-size: 0.78rem;
+      }
+
+      form {
+        display: flex;
+        gap: 10px;
+        padding: 18px 24px 24px;
+        border-top: 1px solid #edf0f5;
+      }
+
+      input {
+        min-width: 0;
+        flex: 1;
+        border: 1px solid #d8deea;
+        border-radius: 10px;
+        padding: 12px 14px;
+        font: inherit;
+      }
+
+      input:focus {
+        border-color: #5575e8;
+        outline: 3px solid rgb(85 117 232 / 15%);
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 0 20px;
+        background: #405fdb;
+        color: #fff;
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      button:disabled,
+      input:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      @media (max-width: 480px) {
+        body {
+          padding: 12px;
+        }
+
+        header,
+        #messages {
+          padding-right: 18px;
+          padding-left: 18px;
+        }
+
+        form {
+          padding-right: 18px;
+          padding-left: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>WebSocket 채팅 튜토리얼</h1>
+        <p>여러 브라우저 탭을 열어 실시간 메시지 전송을 확인해 보세요.</p>
+        <div id="status" data-state="connecting" role="status">연결 중...</div>
+      </header>
+
+      <ol id="messages" aria-live="polite" aria-label="채팅 메시지"></ol>
+
+      <form id="chat-form">
+        <input
+          id="message-input"
+          type="text"
+          maxlength="500"
+          placeholder="메시지를 입력하세요"
+          aria-label="메시지"
+          autocomplete="off"
+          disabled
+        />
+        <button id="send-button" type="submit" disabled>전송</button>
+      </form>
+    </main>
+
+    <script>
+      const statusElement = document.querySelector("#status");
+      const messagesElement = document.querySelector("#messages");
+      const form = document.querySelector("#chat-form");
+      const input = document.querySelector("#message-input");
+      const sendButton = document.querySelector("#send-button");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const socket = new WebSocket(`${protocol}//${window.location.host}`);
+
+      function setConnected(connected) {
+        statusElement.dataset.state = connected ? "connected" : "disconnected";
+        statusElement.textContent = connected ? "연결됨" : "연결 종료";
+        input.disabled = !connected;
+        sendButton.disabled = !connected;
+      }
+
+      function addMessage(message) {
+        const item = document.createElement("li");
+
+        if (message.type === "system" || message.type === "error") {
+          item.className = "system";
+          item.textContent = message.text;
+        } else {
+          const time = document.createElement("time");
+          time.dateTime = message.time;
+          time.textContent = new Date(message.time).toLocaleTimeString("ko-KR", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          item.append(time, document.createTextNode(message.text));
+        }
+
+        messagesElement.append(item);
+        messagesElement.scrollTop = messagesElement.scrollHeight;
+      }
+
+      socket.addEventListener("open", () => {
+        setConnected(true);
+        input.focus();
+      });
+
+      socket.addEventListener("message", (event) => {
+        try {
+          addMessage(JSON.parse(event.data));
+        } catch {
+          addMessage({ type: "error", text: "서버 응답을 해석하지 못했습니다." });
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        setConnected(false);
+      });
+
+      socket.addEventListener("error", () => {
+        statusElement.dataset.state = "disconnected";
+        statusElement.textContent = "연결 오류";
+      });
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+
+        if (socket.readyState !== WebSocket.OPEN || !text) {
+          return;
+        }
+
+        socket.send(JSON.stringify({ type: "chat", text }));
+        input.value = "";
+        input.focus();
+      });
+    </script>
+  </body>
+</html>

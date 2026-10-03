@@ -1,0 +1,12 @@
+{
+  "name": "websocket-echo-tutorial",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WebSocket echo tutorial: Node.js server and index.html client",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

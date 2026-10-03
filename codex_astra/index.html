@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebSocket 튜토리얼</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f1f5f9; color: #17233b; font: 16px/1.6 system-ui, sans-serif; }
+    main { max-width: 880px; margin: 48px auto; padding: 0 20px; }
+    h1 { margin: 0; font-size: clamp(26px, 5vw, 38px); }
+    h2 { margin-top: 0; font-size: 19px; }
+    .eyebrow { color: #3154b8; font-weight: 700; letter-spacing: 2px; font-size: 12px; }
+    .intro { color: #526077; }
+    section { margin-top: 22px; padding: 24px; background: white; border: 1px solid #dbe3ed; border-radius: 16px; }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input, select, button { font: inherit; border-radius: 8px; padding: 10px 12px; }
+    input, select { border: 1px solid #aebcd0; background: white; color: inherit; }
+    input { width: 100%; min-width: 0; }
+    button { border: 0; background: #3154b8; color: white; cursor: pointer; }
+    button.secondary { background: #e9eef7; color: #263f77; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    :focus-visible { outline: 3px solid #e59b24; outline-offset: 3px; }
+    .grow { flex: 1; min-width: 160px; }
+    .status { font-weight: 700; color: #526077; }
+    .status.connected { color: #14744d; }
+    .meta { margin-top: 14px; font-size: 14px; color: #526077; }
+    #log { height: 300px; overflow: auto; margin-top: 16px; padding: 14px; background: #111c32; color: #d8e6fa; border-radius: 10px; font: 13px/1.8 ui-monospace, monospace; }
+    #log div { white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px solid #26334b; padding: 5px 0; }
+    .hint { color: #526077; font-size: 14px; }
+    @media (max-width: 500px) { main { margin: 24px auto; } section { padding: 18px; } }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">REALTIME LAB / 01</p>
+  <h1>WebSocket 튜토리얼</h1>
+  <p class="intro">연결을 열고, 메시지를 보내고, 실시간 응답을 확인해 보세요.</p>
+  <section aria-labelledby="connection-title">
+    <h2 id="connection-title">1. 서버 연결</h2>
+    <label for="url">WebSocket 주소</label>
+    <div class="row">
+      <input class="grow" id="url" spellcheck="false" aria-label="WebSocket 주소">
+      <button id="connect">연결</button>
+      <button id="disconnect" class="secondary" disabled>연결 해제</button>
+    </div>
+    <div class="meta" aria-live="polite"><span id="status" class="status">연결 안 됨</span> · 내 ID: <span id="clientId">-</span> · 접속자: <span id="count">0</span>명</div>
+  </section>
+  <section aria-labelledby="message-title">
+    <h2 id="message-title">2. 메시지 보내기</h2>
+    <form id="messageForm">
+      <label for="mode">전송 방식</label>
+      <select id="mode"><option value="echo">에코 — 나에게만 응답</option><option value="chat">채팅 — 모두에게 전송</option></select>
+      <label for="message" style="margin-top:14px">메시지</label>
+      <div class="row">
+        <input class="grow" id="message" placeholder="안녕하세요, WebSocket!" maxlength="1000" required autocomplete="off">
+        <button id="send" disabled>전송</button>
+      </div>
+    </form>
+    <p class="hint">새 탭에서 같은 페이지를 열고 두 탭 모두 연결하면 채팅을 실습할 수 있습니다.</p>
+  </section>
+  <section aria-labelledby="log-title">
+    <div class="row"><h2 id="log-title" class="grow" style="margin:0">3. 송수신 로그</h2><button id="clear" class="secondary">로그 지우기</button></div>
+    <div id="log" role="log" aria-live="polite" aria-label="송수신 로그"></div>
+  </section>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  let socket = null;
+  $('url').value = location.protocol === 'file:'
+    ? 'ws://127.0.0.1:3000/ws'
+    : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
+
+  function log(direction, value) {
+    const entry = document.createElement('div');
+    // textContent로 표시하므로 메시지에 HTML이 있어도 코드로 실행되지 않습니다.
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${direction} ${value}`;
+    $('log').append(entry);
+    if ($('log').children.length > 200) $('log').firstElementChild.remove();
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+  function setState(state) {
+    const open = state === 'connected';
+    const idle = state === 'idle';
+    $('status').textContent = { idle: '연결 안 됨', connecting: '연결 중…', connected: '연결됨', closing: '연결 해제 중…' }[state];
+    $('status').classList.toggle('connected', open);
+    $('connect').disabled = !idle;
+    $('url').disabled = !idle;
+    $('disconnect').disabled = !open;
+    $('send').disabled = !open;
+    if (idle) { $('clientId').textContent = '-'; $('count').textContent = '0'; }
+  }
+
+  $('connect').addEventListener('click', () => {
+    if (socket && socket.readyState !== WebSocket.CLOSED) return;
+    try {
+      const url = new URL($('url').value);
+      if (!['ws:', 'wss:'].includes(url.protocol)) throw new Error('ws:// 또는 wss:// 주소를 입력하세요.');
+      // 1) 연결 시작 → open / message / error / close 이벤트 등록
+      socket = new WebSocket(url.href);
+      setState('connecting');
+      socket.addEventListener('open', () => { setState('connected'); log('연결', url.href); });
+      socket.addEventListener('message', event => {
+        log('수신 ←', event.data);
+        try {
+          const message = JSON.parse(event.data);
+          if (message?.type === 'welcome') $('clientId').textContent = message.clientId;
+          if (message?.type === 'presence') $('count').textContent = message.count;
+        } catch { /* 다른 서버의 일반 텍스트도 로그에서 확인 가능합니다. */ }
+      });
+      socket.addEventListener('error', () => log('오류', '연결 또는 통신에 실패했습니다. 서버 실행 상태와 주소를 확인하세요.'));
+      socket.addEventListener('close', event => {
+        setState('idle');
+        log('종료', `code=${event.code}, reason=${event.reason || '-'}, clean=${event.wasClean}`);
+      });
+    } catch (error) { setState('idle'); log('오류', error.message); }
+  });
+
+  $('messageForm').addEventListener('submit', event => {
+    event.preventDefault();
+    // 2) OPEN 상태에서만 JSON 문자열 전송
+    if (!socket || socket.readyState !== WebSocket.OPEN) { log('안내', '먼저 서버에 연결하세요.'); return; }
+    const text = $('message').value.trim();
+    if (!text) return;
+    const data = JSON.stringify({ type: $('mode').value, text });
+    socket.send(data);
+    log('송신 →', data);
+    $('message').value = '';
+    $('message').focus();
+  });
+  $('disconnect').addEventListener('click', () => {
+    // 3) 정상 종료 코드 1000으로 연결 해제
+    if (socket?.readyState === WebSocket.OPEN) { setState('closing'); socket.close(1000, 'User disconnected'); }
+  });
+  $('clear').addEventListener('click', () => $('log').replaceChildren());
+  log('안내', '서버를 실행한 뒤 연결 버튼을 누르세요.');
+</script>
+</body>
+</html>
